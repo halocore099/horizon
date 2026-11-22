@@ -1037,6 +1037,10 @@ impl Game<'_> {
                 }
             }
             C::EntityEvent(p) => {
+                if let Some(epoch) = self.native_lifecycle.epoch() {
+                    let entity = mod_api::EntityRef::new(epoch, p.id as u32);
+                    self.native_entity_event_received(entity, p.event as u8);
+                }
                 if p.event == super::super::fireworks::FIREWORK_EXPLODE_EVENT {
                     self.remote_firework_explosion(p.id);
                 }
