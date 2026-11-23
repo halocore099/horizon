@@ -1,0 +1,106 @@
+# Fork-only: never part of a pull request upstream. Builds a local developer base of this commit on GitHub's free
+# runners (docs/modding/src/how-to/native-mods/07-local-developer-builds.md): the game programs and the exporters
+# `horizon-launcher developer-install` packages, and the native SDK `native-build` links mods against
+# (HORIZON_LAUNCHER_DEVELOPER_SDK). Both are unsigned and only for this fork's own testing.
+name: fork-build
+on:
+  push:
+    branches: ['fork-build/**']
+permissions:
+  contents: read
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: 0
+jobs:
+  programs:
+    # ubuntu-22.04 as upstream's Linux release legs: its glibc is older than any player's.
+    runs-on: ubuntu-22.04
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v4
+      - name: Free disk space (the runner's preinstalled SDKs we don't use)
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL /usr/local/share/boost
+          df -h /
+      - name: The pinned Rust (the launcher's), wasm, and the ALSA and udev headers
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libasound2-dev libudev-dev
+          rustup toolchain install "$(cat tools/ci/rust-version)" --profile minimal --component rust-src --target wasm32-unknown-unknown
+          rustup default "$(cat tools/ci/rust-version)"
+          rustc --version
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+      - name: Download the pinned 26.3 game files from Mojang
+        run: python3 .github/fork-ci/fetch_minecraft.py "$RUNNER_TEMP/minecraft"
+      - name: Build the official game, horizon-ctl, horizon-prepare and horizon-server
+        run: |
+          cargo build --release --locked -p horizon-official --bin horizon-official -p horizon-client-lib --bin horizon-ctl \
+            -p horizon-prepare --bin horizon-prepare -p horizon-server --bin horizon-server
+          cp -f target/release/horizon-official target/release/horizon-client
+      - name: Import the pinned jars, then compile the exporters against them
+        run: |
+          M="$RUNNER_TEMP/minecraft"
+          target/release/horizon-prepare --prepare \
+            --version-json "$M/versions/26.3/26.3.json" --client-jar "$M/versions/26.3/26.3.jar" \
+            --server-jar "$M/server.jar" --libraries-dir "$M/libraries" --assets-dir "$M/assets" --root "$PWD"
+          rm -rf .local/exporters
+          bundle=$(target/release/horizon-prepare compile-exporters --root "$PWD" | tail -1)
+          mkdir -p exporters
+          cp -R "$bundle/server" "$bundle/client" "$bundle/manifest.json" exporters/
+          # Only Horizon's own classes and their manifest leave the runner, never Mojang's files.
+          stray=$(find exporters -type f ! -path exporters/manifest.json \
+            ! \( -name '*.class' \( -path 'exporters/server/dev/horizonlab/parity/*' -o -path 'exporters/client/dev/horizonlab/parity/*' \) \))
+          [ -z "$stray" ] || { echo "::error::not one of our classes: $stray"; exit 1; }
+      - name: The shared wasm standard library, beside the game
+        run: cargo run --locked -p cargo-horizon-mod -- wasm-std target/release/horizon-wasm-std.wasm
+      - name: Pack the programs and exporters (a tar keeps the executable bits)
+        run: |
+          mkdir -p out
+          tar -cJf out/developer-base.tar.xz exporters -C target/release \
+            horizon-client horizon-ctl horizon-prepare horizon-server horizon-wasm-std.wasm
+          echo "$GITHUB_SHA" > out/commit
+          ls -lh out
+      - uses: actions/upload-artifact@v4
+        with:
+          name: developer-base
+          path: out
+          if-no-files-found: error
+          retention-days: 7
+  sdk:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v4
+      - name: Free disk space (the runner's preinstalled SDKs we don't use)
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL /usr/local/share/boost
+          df -h /
+      - name: The pinned Rust (the launcher's) and the ALSA and udev headers
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libasound2-dev libudev-dev
+          rustup toolchain install "$(cat tools/ci/rust-version)" --profile minimal
+          rustup default "$(cat tools/ci/rust-version)"
+          rustc -vV | grep -Fx "host: x86_64-unknown-linux-gnu"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Build and collect the native SDK
+        run: python tools/prebuilt_game.py build prebuilt
+      - name: Two native starter mods link against the SDK alone
+        run: python tools/prebuilt_game.py smoke prebuilt
+      - name: Pack the SDK folder
+        run: |
+          mkdir -p out
+          tar -cJf out/developer-sdk.tar.xz prebuilt
+          echo "$GITHUB_SHA" > out/commit
+          ls -lh out
+      - uses: actions/upload-artifact@v4
+        with:
+          name: developer-sdk
+          path: out
+          if-no-files-found: error
+          retention-days: 7
