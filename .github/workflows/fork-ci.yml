@@ -45,7 +45,7 @@ jobs:
       - name: Prepare the vanilla resources
         run: |
           M="$RUNNER_TEMP/minecraft"
-          cargo run --locked -p horizon-prepare -- \
+          cargo run --locked -p horizon-prepare -- --prepare \
             --version-json "$M/versions/26.3/26.3.json" --client-jar "$M/versions/26.3/26.3.jar" \
             --server-jar "$M/server.jar" --libraries-dir "$M/libraries" --assets-dir "$M/assets" --root "$PWD"
       - name: The client hook test (needs the prepared resources)
