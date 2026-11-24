@@ -111,8 +111,8 @@ pub struct Manifest {
     /// Free-form values other mods read through `PackageInfo::property`.
     #[serde(default)]
     pub properties: std::collections::BTreeMap<String, Property>,
-    /// The Java mod a port was made from: its licence travels with the port and decides whether
-    /// it may be published (docs/modpacks.md, Licences).
+    /// The Java mod a port was made from, so its licence travels with the port
+    /// (docs/modpacks.md, Licences). Recorded only: nothing checks it yet.
     #[serde(default)]
     pub ported_from: Option<PortedFrom>,
 }
