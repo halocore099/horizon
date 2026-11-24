@@ -1,0 +1,2 @@
+# A client mod hears each entity event the server sends, using prepared vanilla resources.
+horizon-client game::native_hooks::entity_event_received::entity_event_received_tests::a_client_mod_hears_each_entity_event_the_server_sends lib daily resources
