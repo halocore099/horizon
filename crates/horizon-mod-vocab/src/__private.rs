@@ -223,6 +223,20 @@ pub mod built {
             ended,
         }
     }
+    /// The mod export's status snapshot, constructed by the game.
+    pub fn export_status(
+        request: u32,
+        name: String,
+        state: crate::ExportState,
+        [frame, frames]: [u32; 2],
+        [width, height]: [u32; 2],
+        (fps_num, fps_den): (u32, u32),
+        bytes: u64,
+    ) -> crate::ExportStatus {
+        crate::ExportStatus {
+            request, name, state, frame, frames, width, height, fps_num, fps_den, bytes,
+        }
+    }
     /// Wrap a slot in the persistent instance group store.
     pub fn instance_group_ref(generation: u64, slot: u32) -> crate::InstanceGroupRef {
         crate::InstanceGroupRef::from_parts(generation, slot).expect("published group generation")
@@ -271,6 +285,10 @@ pub mod game {
     /// A boss bar handle the game names.
     pub fn boss_bar_ref(epoch: WorldEpoch, uuid: u128) -> BossBarRef {
         BossBarRef { epoch, uuid }
+    }
+    /// A team handle the game names.
+    pub fn team_ref(epoch: WorldEpoch, name: String) -> TeamRef {
+        TeamRef { epoch, name }
     }
     /// A chunk handle the game names.
     pub fn chunk_ref(level: LevelRef, pos: [i32; 2]) -> ChunkRef {
@@ -386,6 +404,21 @@ pub mod game {
             BossBarRefFields {
                 epoch: self.epoch,
                 uuid: self.uuid,
+            }
+        }
+    }
+
+    #[non_exhaustive]
+    pub struct TeamRefFields<'a> {
+        pub epoch: WorldEpoch,
+        pub name: &'a str,
+    }
+    impl Fields for TeamRef {
+        type Fields<'a> = TeamRefFields<'a>;
+        fn fields(&self) -> TeamRefFields<'_> {
+            TeamRefFields {
+                epoch: self.epoch,
+                name: &self.name,
             }
         }
     }

@@ -367,6 +367,18 @@ class CompareTests(unittest.TestCase):
         # can't be told from a later hook losing an owned type, so this fails rather than open that.
         self.assertEqual(self.compare_hook_addition((857, 860, 863, 862), self.OWNED_ARM), 1)
 
+    def test_an_added_hook_and_a_new_host_area_with_its_own_records_pass(self):
+        # The three retained records above the new host import shift even before the hook.
+        records = (859, 861, 865, 864)
+        source = ('impl crate::VideoClientHost for Guest {\n'
+                  'fn start(&mut self) -> u32 { let r = host_import!("Video::start#ab", 5u32, w); r.take() }\n'
+                  '}\n')
+        self.assertEqual(self.compare_hook_addition(records, self.OWNED_ARM, lambda text: source + text), 0)
+        unsupported = source.replace('}\n', 'fn unexpected(&self) {}\n}\n', 1)
+        self.assertEqual(self.compare_hook_addition(records, self.OWNED_ARM, lambda text: unsupported + text), 1)
+        self.assertEqual(self.compare_hook_addition((859, 861, 864, 865), self.OWNED_ARM,
+                                                    lambda text: source + text), 1)
+
     def test_a_changed_existing_arm_beside_an_added_hook_fails(self):
         cases = {
             "an existing arm's text": ((857, 859, 863, 862), lambda text: text.replace("out.put(&p1.visible);", "")),
@@ -440,6 +452,26 @@ class CompareTests(unittest.TestCase):
             with self.subTest(name):
                 status, text = self.run_compare(base, {"hook-notes.md": NOTES, **files}, allow_added=True)
                 self.assertEqual(status, 1, text)
+
+    def test_an_added_native_only_unsupported_stub_passes_with_the_flag(self):
+        stub = ('#[cfg(not(target_arch = "wasm32"))]\n'
+                'fn tool_break_block(&mut self, p0: u32) -> bool '
+                '{ crate::wire::guest::unsupported("BackendMut::tool_break_block") }\n')
+        existing_stub = ('#[cfg(not(target_arch = "wasm32"))]\n'
+                         'fn existing_native(&self) -> bool '
+                         '{ crate::wire::guest::unsupported("BackendMut::existing_native") }\n')
+        base_wire = self.forwarders(self.BASE_CALLS).replace("\n}\n", "\n" + existing_stub + "}\n", 1)
+        head_wire = base_wire.replace("\n}\n", "\n" + stub + "}\n", 1)
+        status, text = self.run_compare({"wire_guest_generated.rs": base_wire},
+                                        {"wire_guest_generated.rs": head_wire}, allow_added=True)
+        self.assertEqual(status, 0, text)
+        self.assertIn("Host calls added (accepted): BackendMut::tool_break_block", text)
+        self.assertEqual(self.run_compare({"wire_guest_generated.rs": base_wire},
+                                          {"wire_guest_generated.rs": head_wire}, allow_added=False)[0], 1)
+        # Editing an existing unsupported stub still fails.
+        edited = head_wire.replace("fn existing_native(&self) -> bool", "fn existing_native(&self) -> u32")
+        self.assertEqual(self.run_compare({"wire_guest_generated.rs": base_wire},
+                                          {"wire_guest_generated.rs": edited}, allow_added=True)[0], 1)
 
     def test_a_loops_json_difference_fails_with_the_flag(self):
         status, _ = self.run_compare({"loops.json": NO_LOOPS}, {"loops.json": json.dumps({"loops": [], "x": 1})}, allow_added=True)

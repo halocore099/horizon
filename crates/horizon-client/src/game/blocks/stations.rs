@@ -1420,7 +1420,7 @@ impl Game<'_> {
             batch.text(atlas, text, x, y, color, false);
             return;
         };
-        let cell = sheet.w / 16;
+        let cell = sheet.texels((atlas.width, atlas.height)).0 / 16;
         let (px, py) = (
             (sheet.u0 * atlas.width as f32) as u32,
             (sheet.v0 * atlas.height as f32) as u32,
@@ -1513,7 +1513,7 @@ impl Game<'_> {
             .data()
             .and_then(|d| d.written.as_ref())
             .map(|w| w.title.as_str())
-            .filter(|t| !t.trim().is_empty())
+            .filter(|t| !horizon_core::java_character::is_blank(t))
         {
             title.to_owned()
         } else if let Some(n) = stack.item_name() {
@@ -2360,7 +2360,9 @@ impl Game<'_> {
     /// a bundle's contents do (`ClientBundleTooltip`).
     pub(super) fn tooltip_with_carried(&self, stack: &ItemStack) -> bool {
         self.carried.is_none()
-            || horizon_client::bundle::Contents::of(self.items(), stack).is_some()
+            || (horizon_client::item_tooltip::tooltip_display(stack)
+                .shows("minecraft:bundle_contents")
+                && horizon_client::bundle::Contents::of(self.items(), stack).is_some())
     }
     /// Hovered-slot tooltip on the plain inventory, crafting and container screens.
     pub(super) fn draw_slot_tooltip(&mut self, batch: &mut HudBatch) {

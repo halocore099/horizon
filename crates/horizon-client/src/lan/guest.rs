@@ -322,6 +322,12 @@ pub struct Guest {
     /// A position move arrived since the client's last ClientTickEnd
     /// (receivedPositionThisTick): a second one is a protocol error.
     pub position_this_tick: bool,
+    /// A move reached the player since its last ClientTickEnd
+    /// (`receivedMovementThisTick`): its own position packet, or the one its
+    /// vehicle drove (`handleMoveVehicle` → `handlePlayerKnownMovement`, which
+    /// a rider's `known_movement` comes from: a rider sends no position of its
+    /// own). Without one, `handleClientTickEnd` zeroes `known_movement`.
+    pub movement_this_tick: bool,
     /// Violation levels and the checks' state (the anticheat, when on).
     pub anticheat: horizon_anticheat::Player,
     /// The client ticks the movement prediction plays again (only while it records).
@@ -806,6 +812,7 @@ impl Guest {
             rests_on_ground: false,
             support_blocks_sent: 0,
             position_this_tick: false,
+            movement_this_tick: false,
             anticheat: Default::default(),
             record: None,
             client_sprinting: false,
@@ -2131,6 +2138,15 @@ pub(super) fn network_stack(
                 horizon_protocol::item::Component::Unit,
             ));
         }
+        // Glider too: the client starts a glide on its own (`LocalPlayer.aiStep`:
+        // `tryToStartFallFlying` reads `canGlideUsing`), so a chestplate given
+        // `glider` by a command or a mod glides only if its client sees it.
+        if d.other("minecraft:glider").is_some() {
+            stack.added.push((
+                horizon_protocol::item::component::GLIDER,
+                horizon_protocol::item::Component::Unit,
+            ));
+        }
         if let Some(component) = d
             .other("minecraft:kinetic_weapon")
             .and_then(|value| crate::item_sync::kinetic::encode(value, synced_id))
@@ -2964,6 +2980,22 @@ mod tests {
             received.component(component::LORE),
             Some(&Component::Lore(lines))
         );
+    }
+
+    #[test]
+    fn a_saved_glider_reaches_the_client() {
+        let mut item = ItemStack::new("minecraft:diamond_chestplate", 1);
+        item.data_mut()
+            .set_other("minecraft:glider", Some(Tag::Compound(Default::default())));
+        let sent = stack_to_network(|_| 7, |_, _| None, &Some(item));
+        let mut writer = Writer::new();
+        horizon_protocol::item::Slot::write(&sent, &mut writer);
+        let mut reader = Reader::new(&writer.data);
+        let received = horizon_protocol::item::Slot::read(&mut reader)
+            .unwrap()
+            .unwrap();
+        // A unit component: the client reads its presence (`glider_and_slot`).
+        assert!(received.component(component::GLIDER).is_some());
     }
 
     #[test]
